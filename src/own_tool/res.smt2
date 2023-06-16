@@ -6,7 +6,7 @@
 (declare-var D Int)
 (declare-var E Int)
 (declare-var F Int)
-(rule (=> (and (= D 0) (= C A)) (inv2 D C A B)))
+(rule (=> (and (= D 0) (= C A) (= 10000 B) (= 5000 A)) (inv2 D C A B)))
 (rule (let ((a!1 (and (inv2 D C A B) (= E (+ D 1)) (= F (ite (>= D A) (+ C 1) C)))))
   (=> a!1 (inv2 E F A B))))
 (rule (=> (and (inv2 C D A B) (= C B) (not (= D C))) fail))

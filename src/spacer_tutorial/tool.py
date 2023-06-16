@@ -2,11 +2,7 @@ import sys
 sys.path.insert(0, "/home/ekvashyn/Code/z3/build/python")
 
 import z3
-sys.path.append("/home/ekvashyn/Code/spacer-on-jupyter/src")
-sys.path.append("/home/ekvashyn/Code/chc-tools")
-
 from spacer_tutorial import *
-from chctools import chcmodel, horndb, chcsolve
 
 # proof mode must be enabled before any expressions are created
 z3.set_param(proof=True)
@@ -75,7 +71,6 @@ def for_each_expr(fml, fn, *args, **kwargs):
         for_each_expr(k, fn, *args, **kwargs)
 fp = z3.Fixedpoint()
 queries = fp.parse_string(code)
-assert(len(queries) == 1)
 fp.set('spacer.max_level', 40)
 fp.query(queries[0])
 rules = fp.get_rules()
@@ -127,19 +122,6 @@ substitutions = [*zip(const_values, magic_values_vars)]
 
 # Substitute variables in parsed rules and queries
 ugly_rules = [z3.substitute(rule, substitutions) for rule in fp.get_rules()]
-additional_condintions = [(sub_var == sub_val) for sub_val, sub_var in substitutions]
-
-ufu_q, ufu_vars, ufu_rule = expand_quant(ugly_rules[0])
-assert(z3.is_implies(ufu_rule))
-assert(z3.is_and(ufu_rule.arg(0)))
-upd_ufu_rule_tail = z3.And(*ufu_rule.arg(0).children(), *additional_condintions)
-upd_ufu_rule = z3.Implies(upd_ufu_rule_tail, ufu_rule.arg(1))
-ugly_rules[0] = upd_ufu_rule
-
-
-Z = z3.IntSort()
-B = z3.BoolSort()
-
 def find_invs(gnd_rule_body):
     found = set()
     def is_inv_term(e, found):
@@ -184,38 +166,12 @@ new_ugly_rules = [*map(mk_new_rule ,ugly_rules)]
 new_ugly_vars = list(set().union(*map(mk_new_rule_vars ,ugly_rules)))
 
 fp_new = z3.Fixedpoint()
-inv2 = z3.Function('inv2', Z, Z, Z, Z, B)
-fp_new.register_relation(inv2)
+fp_new.register_relation(z3.Function('inv2', Z, Z, Z, Z, B))
 fp_new.register_relation(z3.Function('fail', B))
 fp_new.declare_var(*new_ugly_vars)
 fp_new.declare_var(*magic_values_vars)
 for new_ugly_rule in new_ugly_rules:
     fp_new.add_rule(new_ugly_rule)
-# fp_new.set("spacer.global", True)
-# res = fp_new.query(queries)
-
-# print(f"res = {res}")
-# print(f"res = {fp_new.get_answer().sexpr()}")
-
-# ------------------------
-
-#print(fp_new.get_rules().sexpr())
-
-rules = fp_new.get_rules()
-rules.push(z3.Implies(queries[0], z3.BoolVal(False)))
-print(f"Solving rules:\n{rules.sexpr()}")
-sh_res, sh_answer = solve_horn(rules, max_unfold=40)
-
-sh_db = horndb.HornClauseDb("prblm")
-sh_db.load_from_fp(fp_new, queries)
-
-# chcsolve.chc_solve_with_fp(sh_db, [], {"spacer.global": True})
-
-
-# print(f"ans = {chcmodel.ModelValidator(sh_db, sh_answer).validate()}")
-print(f"ans = {sh_res}")
-print(f"sh_answer = {sh_answer.sexpr()}")
-
 # print(fp_new.to_string(queries))
 
 with open('res.smt2', 'w') as f:
