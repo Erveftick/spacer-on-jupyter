@@ -1,18 +1,13 @@
 import sys
-sys.path.insert(0, "/home/ekvashyn/Code/z3/build/python")
-
 import z3
 sys.path.append("/home/ekvashyn/Code/spacer-on-jupyter/src")
-sys.path.append("/home/ekvashyn/Code/chc-tools")
 
 from spacer_tutorial import *
-from chctools import chcmodel, horndb, chcsolve
+from chctools import chcmodel, horndb
 
 # proof mode must be enabled before any expressions are created
 z3.set_param(proof=True)
 z3.set_param(model=True)
-# print expressions with HTML
-z3.set_html_mode(True)
 
 with open('prblm.smt2', 'r') as file:
     code = file.read()
@@ -73,6 +68,7 @@ def for_each_expr(fml, fn, *args, **kwargs):
     if not do_kids: return
     for k in fml.children():
         for_each_expr(k, fn, *args, **kwargs)
+
 fp = z3.Fixedpoint()
 queries = fp.parse_string(code)
 assert(len(queries) == 1)
@@ -122,11 +118,15 @@ const_values = [z3.IntVal(val) for val in magic_values]
 # Create a variable for each magic value for substitution
 magic_values_vars = [z3.Int(f"K{val}") for val in magic_values]
 
+print(f"magic_values_vars={magic_values_vars}")
+
 # Create a dictionary for substitutions
 substitutions = [*zip(const_values, magic_values_vars)]
 
+print(f"\n substitutions={substitutions}")
+
 # Substitute variables in parsed rules and queries
-ugly_rules = [z3.substitute(rule, substitutions) for rule in fp.get_rules()]
+ugly_rules = [z3.substitute(rule, substitutions) for rule in rules]
 additional_condintions = [(sub_var == sub_val) for sub_val, sub_var in substitutions]
 
 ufu_q, ufu_vars, ufu_rule = expand_quant(ugly_rules[0])
@@ -176,12 +176,15 @@ def mk_new_rule(rule):
         inv2_term = mk_inv2_term(inv_term, magic_values_vars)
         subs.append((inv_term, inv2_term))
 
+    print(f"subs={subs}")
     new_body = z3.substitute(rule_body, subs)
     # for every ground body, apply z3.substitute with the above subs
     return new_body
 
 new_ugly_rules = [*map(mk_new_rule ,ugly_rules)]
 new_ugly_vars = list(set().union(*map(mk_new_rule_vars ,ugly_rules)))
+
+print(f"new_ugly_rules = {new_ugly_rules} \n")
 
 fp_new = z3.Fixedpoint()
 inv2 = z3.Function('inv2', Z, Z, Z, Z, B)
@@ -191,19 +194,12 @@ fp_new.declare_var(*new_ugly_vars)
 fp_new.declare_var(*magic_values_vars)
 for new_ugly_rule in new_ugly_rules:
     fp_new.add_rule(new_ugly_rule)
-# fp_new.set("spacer.global", True)
-# res = fp_new.query(queries)
-
-# print(f"res = {res}")
-# print(f"res = {fp_new.get_answer().sexpr()}")
-
-# ------------------------
-
-#print(fp_new.get_rules().sexpr())
 
 rules = fp_new.get_rules()
 rules.push(z3.Implies(queries[0], z3.BoolVal(False)))
-print(f"Solving rules:\n{rules.sexpr()}")
+
+print(f"rules={rules}")
+
 sh_res, sh_answer = solve_horn(rules, max_unfold=40)
 
 sh_db = horndb.HornClauseDb("prblm")
@@ -212,7 +208,9 @@ sh_db.load_from_fp(fp_new, queries)
 # chcsolve.chc_solve_with_fp(sh_db, [], {"spacer.global": True})
 
 
-# print(f"ans = {chcmodel.ModelValidator(sh_db, sh_answer).validate()}")
+print(f"queries = {queries} \n")
+
+print(f"ans = {chcmodel.ModelValidator(sh_db, sh_answer).validate()}")
 print(f"ans = {sh_res}")
 print(f"sh_answer = {sh_answer.sexpr()}")
 
