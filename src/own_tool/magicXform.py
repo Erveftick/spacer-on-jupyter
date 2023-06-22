@@ -1,4 +1,5 @@
 import sys
+import argparse
 import z3
 sys.path.append("/home/ekvashyn/Code/spacer-on-jupyter/src")
 
@@ -8,6 +9,15 @@ from chctools import chcmodel, horndb
 # proof mode must be enabled before any expressions are created
 z3.set_param(proof=True)
 z3.set_param(model=True)
+
+
+# Create the script args parser
+parser = argparse.ArgumentParser(description="A script to process problem and result files")
+
+# Add optional arguments with default values
+parser.add_argument('--pf', default='problem.smt2', help='Path to the problem file')
+parser.add_argument('--rf', default='result.smt2', help='Path to the result file')
+
 
 ascii_art = r"""
 ███╗░░░███╗░█████╗░░██████╗░██╗░█████╗░██╗░░██╗███████╗░█████╗░██████╗░███╗░░░███╗
@@ -19,13 +29,15 @@ ascii_art = r"""
 """
 print(ascii_art)
 
-with open('prblm.smt2', 'r') as file:
-    code = file.read()
-
 #---- Helper functions -----------
 
 Z = z3.IntSort()
 B = z3.BoolSort()
+
+def read_file(problem_file='prblm.smt2'):
+    with open(problem_file, 'r') as file:
+        code = file.read()
+    return code 
 
 def expand_quant(fml):
     """Expand quantifier into Quantifier, Variables, and Body."""
@@ -137,7 +149,7 @@ def find_invs(gnd_rule_body, inv_name='inv'):
     found = set()
 
     def _is_inv_term(e, found):
-        if e.decl().name() == inv_name:
+        if e.decl().name().startswith(inv_name):
             found.add(e)
             return False
         return True
@@ -152,26 +164,49 @@ def append_sorts(inv_term, new_vars):
     inv2_sorts.append(B)
     return inv2_sorts
 
-def mk_inv2_term(inv_term, new_vars):
+def mk_inv2(inv_term, new_vars=[]):
     inv2_sorts = append_sorts(inv_term, new_vars)
     inv2_fdecl = z3.Function("inv2", *inv2_sorts)
     inv2_args = inv_term.children() + new_vars
     inv2_term = inv2_fdecl(*inv2_args)
-    return inv2_term
+    return inv2_term, inv2_fdecl
 
 def mk_rule_vars(rule):
     _, rule_vars, _ = expand_quant(rule)
     return rule_vars
 
-def mk_new_rule(rule, values_vars):
-    def generate_rule_substitutions(rule_body, new_vars):
-        subs = list()
+def generate_rule_substitutions(rule_body, new_vars):
+    subs = list()
+    inv_terms = find_invs(rule_body)
+    for inv_term in inv_terms:
+        inv2_term, _ = mk_inv2(inv_term, new_vars)
+        subs.append((inv_term, inv2_term))
+    return subs
+
+def flatten(lst):
+    result = []
+    for i in lst:
+        if isinstance(i, list):
+            result.extend(flatten(i))
+        else:
+            result.append(i)
+    return result
+
+
+def get_inv_instance(rule):
+    def inve(rule_body):
+        inv_list = list()
         inv_terms = find_invs(rule_body)
         for inv_term in inv_terms:
-            inv2_term = mk_inv2_term(inv_term, new_vars)
-            subs.append((inv_term, inv2_term))
-        return subs
-    
+            _, inv2 = mk_inv2(inv_term)
+            inv_list.append(inv2)
+        return inv_list
+
+    _, _, rule_body = expand_quant(rule)
+    inv_list = inve(rule_body)
+    return inv_list
+
+def mk_new_rule(rule, values_vars):
     _, _, rule_body = expand_quant(rule)
     subs = generate_rule_substitutions(rule_body, values_vars)
     new_body = z3.substitute(rule_body, subs)
@@ -181,7 +216,8 @@ def mk_new_rule(rule, values_vars):
 
 def set_fixedpoint(new_rules, new_vars, additional_vars):
     fp_new = z3.Fixedpoint()
-    inv2 = z3.Function('inv2', Z, Z, Z, Z, B)
+    invs = flatten([*map(get_inv_instance, new_rules)])
+    inv2 = invs[0]
     fp_new.register_relation(inv2)
     fp_new.register_relation(z3.Function('fail', B))
     fp_new.declare_var(*new_vars)
@@ -197,7 +233,7 @@ def write_to_console(fp_new, queries):
     print("----- Rewritten code section -----\n")
     print(rewritten_result(fp_new, queries))
 
-def write_to_file(fp_new, queries, filename='res3.smt2'):
+def write_to_file(fp_new, queries, filename='res.smt2'):
     with open(filename, 'w') as f:
         print(rewritten_result(fp_new, queries), file=f)
 
@@ -212,6 +248,14 @@ def process_horn(sh_db, fp_rules):
         print(f"Answer: \n {answer.sexpr()}")
 
 def main():
+    # Parse the cmd arguments
+    program_args = parser.parse_args()
+
+    problem_file = str(program_args.pf)
+    result_file = str(program_args.rf)
+
+    code = read_file(problem_file)
+
     rules, queries, magic_values_vars = process_rules_and_queries(code)
 
     new_rules = create_new_rules(rules, magic_values_vars)
@@ -220,7 +264,7 @@ def main():
     fp_new = set_fixedpoint(new_rules, new_vars, magic_values_vars)
 
     write_to_console(fp_new, queries)
-    write_to_file(fp_new, queries)
+    write_to_file(fp_new, queries, result_file)
 
     fp_rules = fp_new.get_rules()
     fp_rules.push(z3.Implies(queries[0], z3.BoolVal(False)))
