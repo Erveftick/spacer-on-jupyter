@@ -9,10 +9,20 @@ from chctools import chcmodel, horndb
 z3.set_param(proof=True)
 z3.set_param(model=True)
 
+ascii_art = r"""
+███╗░░░███╗░█████╗░░██████╗░██╗░█████╗░██╗░░██╗███████╗░█████╗░██████╗░███╗░░░███╗
+████╗░████║██╔══██╗██╔════╝░██║██╔══██╗╚██╗██╔╝██╔════╝██╔══██╗██╔══██╗████╗░████║
+██╔████╔██║███████║██║░░██╗░██║██║░░╚═╝░╚███╔╝░█████╗░░██║░░██║██████╔╝██╔████╔██║
+██║╚██╔╝██║██╔══██║██║░░╚██╗██║██║░░██╗░██╔██╗░██╔══╝░░██║░░██║██╔══██╗██║╚██╔╝██║
+██║░╚═╝░██║██║░░██║╚██████╔╝██║╚█████╔╝██╔╝╚██╗██║░░░░░╚█████╔╝██║░░██║██║░╚═╝░██║
+╚═╝░░░░░╚═╝╚═╝░░╚═╝░╚═════╝░╚═╝░╚════╝░╚═╝░░╚═╝╚═╝░░░░░░╚════╝░╚═╝░░╚═╝╚═╝░░░░░╚═╝
+"""
+print(ascii_art)
+
 with open('prblm.smt2', 'r') as file:
     code = file.read()
 
-#-----------------------------
+#---- Helper functions -----------
 
 Z = z3.IntSort()
 B = z3.BoolSort()
@@ -33,7 +43,7 @@ def apply_to_each_expr(fml, fn, *args, **kwargs):
         for child in fml.children():
             apply_to_each_expr(child, fn, *args, **kwargs)
 
-#-----------------------------
+#---- Initial problem parser functions -----------
 
 def setup_fixedpoint():
     fp = z3.Fixedpoint()
@@ -49,7 +59,8 @@ def parse_queries(fp, code):
 def extract_rules(fp):
     return fp.get_rules()
 
-#-----------------------------
+#---- Magic number finders -----------
+
 
 def is_magic_num(v):
     return z3.is_int_value(v) and v.as_long() != 0
@@ -80,7 +91,7 @@ def find_magic_in_rule(rule):
 def find_magic_values(rules):
     return list(set().union(*map(find_magic_in_rule, rules)))
 
-#-----------------------
+#---- Problem rewrite functions -----------
 
 def prepare_substitution(values):
     values_consts = [z3.IntVal(val) for val in values]
@@ -93,8 +104,6 @@ def apply_substitution(rules, substitutions):
 
 def generate_additional_conditions(substitutions):
     return [(sub_var == sub_val) for sub_val, sub_var in substitutions]
-
-#-----------------------
 
 def process_first_rule(rules, substitutions):
     _, _, rule_body = expand_quant(rules[0])
@@ -112,7 +121,6 @@ def create_new_rules(rules, magic_values_vars):
 def create_new_vars(rules):
     return list(set().union(*map(mk_rule_vars, rules)))
 
-
 def process_rules_and_queries(code):
     fp = setup_fixedpoint()
     queries = parse_queries(fp, code)
@@ -123,7 +131,7 @@ def process_rules_and_queries(code):
     new_rules = process_first_rule(subs_rules, substitutions)
     return new_rules, queries, magic_values_vars
 
-#-----------------------
+#---- New invariant creation -----------
 
 def find_invs(gnd_rule_body, inv_name='inv'):
     found = set()
@@ -169,7 +177,7 @@ def mk_new_rule(rule, values_vars):
     new_body = z3.substitute(rule_body, subs)
     return new_body
 
-#--------------------
+#---- Main rewriter process -----------
 
 def set_fixedpoint(new_rules, new_vars, additional_vars):
     fp_new = z3.Fixedpoint()
@@ -182,18 +190,26 @@ def set_fixedpoint(new_rules, new_vars, additional_vars):
         fp_new.add_rule(new_rule)
     return fp_new
 
-def write_to_file(fp_new, queries):
-    with open('res3.smt2', 'w') as f:
-        print(fp_new.to_string(queries), file=f)
+def rewritten_result(fp_new, queries):
+    return fp_new.to_string(queries)
+
+def write_to_console(fp_new, queries):
+    print("----- Rewritten code section -----\n")
+    print(rewritten_result(fp_new, queries))
+
+def write_to_file(fp_new, queries, filename='res3.smt2'):
+    with open(filename, 'w') as f:
+        print(rewritten_result(fp_new, queries), file=f)
 
 def process_horn(sh_db, fp_rules):
     res, answer = solve_horn(fp_rules, max_unfold=40)
+    s_res = str(res)
+
+    print("----- Result section -----\n")
+    print(f"Result: {s_res.upper()}")
     if res == z3.sat:
-        print(f"Is model valid? = {chcmodel.ModelValidator(sh_db, answer).validate()}")
-        print(f"Answer = \n {answer.sexpr()}")
-    elif res == z3.unsat:
-        print(f"res = {res}")
-    
+        print(f"Model valid?: {chcmodel.ModelValidator(sh_db, answer).validate()}")
+        print(f"Answer: \n {answer.sexpr()}")
 
 def main():
     rules, queries, magic_values_vars = process_rules_and_queries(code)
@@ -203,6 +219,9 @@ def main():
     
     fp_new = set_fixedpoint(new_rules, new_vars, magic_values_vars)
 
+    write_to_console(fp_new, queries)
+    write_to_file(fp_new, queries)
+
     fp_rules = fp_new.get_rules()
     fp_rules.push(z3.Implies(queries[0], z3.BoolVal(False)))
 
@@ -210,7 +229,7 @@ def main():
     sh_db.load_from_fp(fp_new, queries)
     process_horn(sh_db, fp_rules)
 
-    write_to_file(fp_new, queries)
+    
     # print(fp_new.to_string(queries))
 
 if __name__ == '__main__':

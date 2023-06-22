@@ -18,7 +18,6 @@ def solve_horn(chc, pp=False, q3=False, gg=True, max_unfold=10, verbosity=0):
     s.set('engine', 'spacer')
     s.set('spacer.order_children', 2)
 
-
     # Enable/disable global guidance strategy
     s.set('spacer.global', gg)
 

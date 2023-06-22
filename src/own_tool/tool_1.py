@@ -163,11 +163,7 @@ def mk_rule_vars(rule):
     _, rule_vars, _ = expand_quant(rule)
     return rule_vars
 
-fp = setup_fixedpoint()
-queries = parse_queries(fp, code)
-rules = extract_rules(fp)
-magic_values = find_magic_values(rules)
-magic_values_vars, substitutions = prepare_substitution(magic_values)
+
 
 def mk_new_rule(rule):
     def generate_rule_substitutions(rule_body, new_vars):
@@ -207,6 +203,12 @@ def process_horn(sh_db, fp_rules):
         print(f"Answer = \n {answer.sexpr()}")
     elif res == z3.unsat:
         print(f"res = {res}")
+
+fp = setup_fixedpoint()
+queries = parse_queries(fp, code)
+rules = extract_rules(fp)
+magic_values = find_magic_values(rules)
+magic_values_vars, substitutions = prepare_substitution(magic_values)
 
 def main():
     raw_rules = apply_substitution(rules, substitutions)
